@@ -73,13 +73,14 @@ return [
     |--------------------------------------------------------------------------
     |
     | timeout        : max seconds a single dump may run.
-    | temp_directory : where the local dump is written before upload.
+    | temp_directory : where the local dump is written before upload; defaults
+    |                  to the system temp dir so nothing lands in the app tree.
     | binaries       : absolute paths to CLI tools when not on $PATH.
     | extra_options  : raw args appended to the dump command, per driver.
     |
     */
     'timeout' => (int) env('DB_BACKUP_TIMEOUT', 900),
-    'temp_directory' => env('DB_BACKUP_TEMP_DIR', storage_path('app/database-backup')),
+    'temp_directory' => env('DB_BACKUP_TEMP_DIR', sys_get_temp_dir().DIRECTORY_SEPARATOR.'database-backup'),
 
     'binaries' => [
         'mysqldump' => env('DB_BACKUP_BIN_MYSQLDUMP', 'mysqldump'),
