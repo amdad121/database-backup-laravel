@@ -92,6 +92,6 @@ return [
     'extra_options' => [
         'mysql' => ['--single-transaction', '--quick', '--no-tablespaces', '--routines', '--triggers', '--events'],
         'mariadb' => ['--single-transaction', '--quick', '--no-tablespaces', '--routines', '--triggers', '--events'],
-        'pgsql' => ['--no-owner', '--no-privileges'],
+        'pgsql' => ['--no-owner', '--no-privileges', '--clean', '--if-exists'],
     ],
 ];

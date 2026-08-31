@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AmdadulHaq\DatabaseBackup;
 
 use AmdadulHaq\DatabaseBackup\Console\BackupDatabaseCommand;
+use AmdadulHaq\DatabaseBackup\Console\ListBackupsCommand;
 use AmdadulHaq\DatabaseBackup\Console\RestoreDatabaseCommand;
 use Illuminate\Support\ServiceProvider;
 
@@ -24,7 +25,11 @@ class DatabaseBackupServiceProvider extends ServiceProvider
                 __DIR__.'/../config/database-backup.php' => config_path('database-backup.php'),
             ], 'database-backup-config');
 
-            $this->commands([BackupDatabaseCommand::class, RestoreDatabaseCommand::class]);
+            $this->commands([
+                BackupDatabaseCommand::class,
+                RestoreDatabaseCommand::class,
+                ListBackupsCommand::class,
+            ]);
         }
     }
 }

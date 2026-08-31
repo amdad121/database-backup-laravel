@@ -91,6 +91,34 @@ class DatabaseBackupManager
         }
     }
 
+    /**
+     * List the backups on the disk for a connection, newest first.
+     *
+     * @return array<int, array{path: string, size: int, modified: int}>
+     */
+    public function backups(?string $connection = null): array
+    {
+        $connection = $connection ?: (string) $this->config->get('database-backup.connection');
+
+        throw_if($connection === '', BackupFailedException::class, 'No database connection configured.');
+
+        $settings = (array) $this->config->get('database-backup');
+        $disk = $this->filesystem->disk((string) ($settings['disk'] ?? 'local'));
+        $prefix = trim((string) ($settings['path'] ?? ''), '/');
+        $needle = Str::slug($connection).'-';
+
+        return collect($disk->files($prefix ?: null))
+            ->filter(fn (string $file): bool => str_starts_with(basename($file), $needle))
+            ->map(fn (string $file): array => [
+                'path' => $file,
+                'size' => (int) $disk->size($file),
+                'modified' => $disk->lastModified($file),
+            ])
+            ->sortByDesc('modified')
+            ->values()
+            ->all();
+    }
+
     private function run(string $connection): string
     {
         $settings = (array) $this->config->get('database-backup');

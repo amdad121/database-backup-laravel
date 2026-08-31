@@ -2,6 +2,16 @@
 
 All notable changes to `database-backup-laravel` will be documented in this file.
 
+## v1.2.0
+
+### Added
+
+- `db:backups` command — lists the backups stored on the disk for the connection (file, size, modified), newest first.
+
+### Changed
+
+- Default `pg_dump` options now include `--clean --if-exists`, so a PostgreSQL restore drops existing objects first instead of failing on "already exists".
+
 ## v1.1.0
 
 ### Added

@@ -129,6 +129,9 @@ php artisan db:backup
 
 # back up a specific connection
 php artisan db:backup --connection=pgsql
+
+# list what's on the disk
+php artisan db:backups
 ```
 
 Schedule it in `routes/console.php`:
@@ -154,7 +157,9 @@ php artisan db:restore --latest --force
 
 The file is pulled from the backup disk, gunzipped if needed, then piped into
 `psql` / `mysql` (SQLite is copied back over the database file). PostgreSQL
-restores run in a single transaction with `ON_ERROR_STOP`.
+restores run in a single transaction with `ON_ERROR_STOP`, and the default
+`pg_dump` options include `--clean --if-exists` so a restore drops existing
+objects first (mysqldump already emits `DROP TABLE IF EXISTS`).
 
 ## Configuration (`config/database-backup.php` / env)
 
