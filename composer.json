@@ -31,7 +31,7 @@
         "illuminate/database": "^11.0|^12.0|^13.0",
         "illuminate/filesystem": "^11.0|^12.0|^13.0",
         "illuminate/support": "^11.0|^12.0|^13.0",
-        "symfony/process": "^7.0"
+        "symfony/process": "^7.0|^8.0"
     },
     "require-dev": {
         "driftingly/rector-laravel": "^2.0",
