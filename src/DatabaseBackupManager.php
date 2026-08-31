@@ -11,6 +11,11 @@ use AmdadulHaq\DatabaseBackup\Dumpers\SqliteDumper;
 use AmdadulHaq\DatabaseBackup\Events\BackupCompleted;
 use AmdadulHaq\DatabaseBackup\Events\BackupFailed;
 use AmdadulHaq\DatabaseBackup\Exceptions\BackupFailedException;
+use AmdadulHaq\DatabaseBackup\Exceptions\RestoreFailedException;
+use AmdadulHaq\DatabaseBackup\Restorers\MysqlRestorer;
+use AmdadulHaq\DatabaseBackup\Restorers\PostgresRestorer;
+use AmdadulHaq\DatabaseBackup\Restorers\Restorer;
+use AmdadulHaq\DatabaseBackup\Restorers\SqliteRestorer;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Filesystem\Factory as FilesystemFactory;
@@ -44,6 +49,48 @@ class DatabaseBackupManager
         }
     }
 
+    /**
+     * Restore a backup from the disk into the connection. Pass $file as a
+     * disk-relative path, or set $latest to pick the newest backup.
+     */
+    public function restore(?string $connection, string $file = '', bool $latest = false): string
+    {
+        $connection = $connection ?: (string) $this->config->get('database-backup.connection');
+
+        throw_if($connection === '', RestoreFailedException::class, 'No database connection configured to restore.');
+
+        $settings = (array) $this->config->get('database-backup');
+        $connectionConfig = (array) $this->config->get("database.connections.{$connection}");
+
+        throw_if($connectionConfig === [], RestoreFailedException::class, "Database connection [{$connection}] is not configured.");
+
+        $disk = $this->filesystem->disk((string) ($settings['disk'] ?? 'local'));
+        $remote = $latest ? $this->latestBackup($disk, $settings, $connection) : $file;
+
+        throw_if($remote === '', RestoreFailedException::class, 'No backup file found to restore.');
+        throw_unless($disk->exists($remote), RestoreFailedException::class, "Backup [{$remote}] not found on the [".($settings['disk'] ?? 'local').'] disk.');
+
+        $local = $this->tempDir($settings).'/db-restore-'.Str::random(16).'-'.basename($remote);
+
+        try {
+            $stream = $disk->readStream($remote);
+            throw_if($stream === null, RestoreFailedException::class, "Unable to read backup [{$remote}].");
+            file_put_contents($local, $stream);
+
+            if (str_ends_with($local, '.gz')) {
+                $local = $this->gunzip($local);
+            }
+
+            $this->restorer((string) ($connectionConfig['driver'] ?? ''), $settings)->restore($connectionConfig, $local);
+
+            return $remote;
+        } finally {
+            if (is_file($local)) {
+                @unlink($local);
+            }
+        }
+    }
+
     private function run(string $connection): string
     {
         $settings = (array) $this->config->get('database-backup');
@@ -53,15 +100,8 @@ class DatabaseBackupManager
 
         $dumper = $this->dumper((string) ($connectionConfig['driver'] ?? ''), $settings);
 
-        $tempDir = (string) ($settings['temp_directory'] ?? sys_get_temp_dir());
-        throw_if(
-            ! is_dir($tempDir) && ! mkdir($tempDir, 0755, true) && ! is_dir($tempDir),
-            BackupFailedException::class,
-            "Unable to create temp directory [{$tempDir}].",
-        );
-
         $extension = $dumper->extension();
-        $local = $tempDir.'/db-backup-'.Str::random(16).'.'.$extension;
+        $local = $this->tempDir($settings).'/db-backup-'.Str::random(16).'.'.$extension;
 
         try {
             $dumper->dump($connectionConfig, $local);
@@ -106,6 +146,73 @@ class DatabaseBackupManager
                 "Unsupported driver [{$driver}]. Supported: mysql, mariadb, pgsql, sqlite."
             ),
         };
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     */
+    private function restorer(string $driver, array $settings): Restorer
+    {
+        $binaries = (array) ($settings['binaries'] ?? []);
+        $timeout = (int) ($settings['timeout'] ?? 900);
+
+        return match ($driver) {
+            'mysql', 'mariadb' => new MysqlRestorer($binaries, $timeout),
+            'pgsql' => new PostgresRestorer($binaries, $timeout),
+            'sqlite' => new SqliteRestorer($binaries, $timeout),
+            default => throw new RestoreFailedException(
+                "Unsupported driver [{$driver}]. Supported: mysql, mariadb, pgsql, sqlite."
+            ),
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     */
+    private function latestBackup(Filesystem $disk, array $settings, string $connection): string
+    {
+        $prefix = trim((string) ($settings['path'] ?? ''), '/');
+        $needle = Str::slug($connection).'-';
+
+        return collect($disk->files($prefix ?: null))
+            ->filter(fn (string $file): bool => str_starts_with(basename($file), $needle))
+            ->sortByDesc(fn (string $file): int => $disk->lastModified($file))
+            ->first() ?? '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     */
+    private function tempDir(array $settings): string
+    {
+        $dir = (string) ($settings['temp_directory'] ?? sys_get_temp_dir());
+
+        throw_if(
+            ! is_dir($dir) && ! mkdir($dir, 0755, true) && ! is_dir($dir),
+            BackupFailedException::class,
+            "Unable to create temp directory [{$dir}].",
+        );
+
+        return $dir;
+    }
+
+    private function gunzip(string $path): string
+    {
+        $out = substr($path, 0, -3);
+        $in = gzopen($path, 'rb');
+        $handle = fopen($out, 'wb');
+
+        throw_if($in === false || $handle === false, RestoreFailedException::class, "Unable to gunzip [{$path}].");
+
+        while (! gzeof($in)) {
+            fwrite($handle, (string) gzread($in, 262144));
+        }
+
+        gzclose($in);
+        fclose($handle);
+        @unlink($path);
+
+        return $out;
     }
 
     private function upload(Filesystem $disk, string $local, string $remote): void

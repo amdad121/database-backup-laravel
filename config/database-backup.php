@@ -84,7 +84,9 @@ return [
 
     'binaries' => [
         'mysqldump' => env('DB_BACKUP_BIN_MYSQLDUMP', 'mysqldump'),
+        'mysql' => env('DB_BACKUP_BIN_MYSQL', 'mysql'),
         'pg_dump' => env('DB_BACKUP_BIN_PGDUMP', 'pg_dump'),
+        'psql' => env('DB_BACKUP_BIN_PSQL', 'psql'),
     ],
 
     'extra_options' => [

@@ -139,6 +139,23 @@ use Illuminate\Support\Facades\Schedule;
 Schedule::command('db:backup')->dailyAt('02:00');
 ```
 
+### Restore
+
+```bash
+# restore the most recent backup for the connection
+php artisan db:restore --latest
+
+# restore a specific file from the disk
+php artisan db:restore backups/pgsql-app-2026-09-01_020000.sql.gz
+
+# skip the "this overwrites the database" prompt (for scripts)
+php artisan db:restore --latest --force
+```
+
+The file is pulled from the backup disk, gunzipped if needed, then piped into
+`psql` / `mysql` (SQLite is copied back over the database file). PostgreSQL
+restores run in a single transaction with `ON_ERROR_STOP`.
+
 ## Configuration (`config/database-backup.php` / env)
 
 | Option | Env | Default | Purpose |
@@ -150,8 +167,8 @@ Schedule::command('db:backup')->dailyAt('02:00');
 | `retention.keep_last` | `DB_BACKUP_KEEP_LAST` | `7` | Keep at most N backups for the connection (0 = unlimited) |
 | `retention.keep_days` | `DB_BACKUP_KEEP_DAYS` | `30` | Delete backups older than N days (0 = off) |
 | `timeout` | `DB_BACKUP_TIMEOUT` | `900` | Max seconds for the dump |
-| `temp_directory` | `DB_BACKUP_TEMP_DIR` | `storage/app/database-backup` | Local scratch dir |
-| `binaries.*` | `DB_BACKUP_BIN_MYSQLDUMP` / `DB_BACKUP_BIN_PGDUMP` | on `$PATH` | Paths to `mysqldump` / `pg_dump` |
+| `temp_directory` | `DB_BACKUP_TEMP_DIR` | system temp dir | Local scratch dir (dump/restore) |
+| `binaries.*` | `DB_BACKUP_BIN_MYSQLDUMP` / `DB_BACKUP_BIN_MYSQL` / `DB_BACKUP_BIN_PGDUMP` / `DB_BACKUP_BIN_PSQL` | on `$PATH` | Paths to `mysqldump` / `mysql` / `pg_dump` / `psql` |
 | `extra_options.*` | — | see config | Raw args appended per driver (`mysql`, `mariadb`, `pgsql`) |
 
 Backups are named `{connection}-{database}-{Y-m-d_His}.sql` (`.sqlite` for SQLite,
@@ -175,12 +192,14 @@ Event::listen(BackupFailed::class, function (BackupFailed $event): void {
 
 ## Drivers
 
-Each database type is a small class in `src/Dumpers/` implementing the
-`AmdadulHaq\DatabaseBackup\Dumpers\Dumper` contract:
+Each database type is a small class implementing the `Dumper` contract
+(`src/Dumpers/`) and the `Restorer` contract (`src/Restorers/`):
 
-- `PostgresDumper` — `pg_dump`
-- `MysqlDumper` — `mysqldump` (handles `mysql` and `mariadb`)
-- `SqliteDumper` — file copy
+| Driver | Backup | Restore |
+| --- | --- | --- |
+| `pgsql` | `pg_dump` | `psql` |
+| `mysql` / `mariadb` | `mysqldump` | `mysql` |
+| `sqlite` | file copy | file copy |
 
 ## Testing
 
