@@ -2,6 +2,26 @@
 
 All notable changes to `database-backup-laravel` will be documented in this file.
 
+## Unreleased
+
+### Fixed
+
+- MySQL / MariaDB passwords containing `"` were written to the client option file unescaped, so the client read a truncated password and the backup failed with "Access denied".
+- The private umask used for local dump files no longer leaks into the backup disk (folders on a public local disk were created `0700`) or into event listeners (files they created were `0600`).
+- A failure writing the `.sha256` checksum no longer reports a stored backup as failed; `BackupChecksumFailed` is dispatched instead.
+- The default temp directory is resolved when the command runs, so a config cached by one user no longer points other users at that user's folder.
+
+### Added
+
+- `BackupChecksumFailed` event.
+- Integration tests against real MySQL 8.0, MariaDB 10.11 and PostgreSQL 16 servers in CI.
+- CI runs Rector in dry-run mode.
+
+### Changed
+
+- Releases are named `vX.Y.Z` (without a "Release" prefix), so the changelog updater finds the existing heading.
+- README scheduler example uses `withoutOverlapping()`.
+
 ## v2.0.0
 
 ### Fixed

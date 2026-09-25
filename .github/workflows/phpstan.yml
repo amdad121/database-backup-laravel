@@ -5,6 +5,7 @@ on:
     paths:
       - "**.php"
       - "phpstan.neon"
+      - "rector.php"
       - ".github/workflows/phpstan.yml"
 
 jobs:
@@ -26,3 +27,6 @@ jobs:
 
       - name: Run PHPStan
         run: ./vendor/bin/phpstan --error-format=github
+
+      - name: Run Rector (dry run)
+        run: ./vendor/bin/rector process --dry-run

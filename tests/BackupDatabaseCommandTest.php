@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use AmdadulHaq\DatabaseBackup\Events\BackupChecksumFailed;
 use AmdadulHaq\DatabaseBackup\Events\BackupCompleted;
+use AmdadulHaq\DatabaseBackup\Events\BackupFailed;
 use AmdadulHaq\DatabaseBackup\Events\BackupPruneFailed;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
@@ -206,4 +208,50 @@ it('stores a sha256 checksum next to each backup and prunes it with the backup',
 
     expect(Storage::disk('backups_disk')->exists($first))->toBeFalse()
         ->and(Storage::disk('backups_disk')->exists($first.'.sha256'))->toBeFalse();
+});
+
+it('keeps the private umask away from the backup disk and event listeners', function (): void {
+    $previous = umask(0022);
+    Storage::fake('backups_disk', ['visibility' => 'public', 'directory_visibility' => 'public']);
+    $listenerFile = sys_get_temp_dir().'/db-backup-listener-'.bin2hex(random_bytes(4));
+
+    Event::listen(BackupCompleted::class, function () use ($listenerFile): void {
+        file_put_contents($listenerFile, 'done');
+    });
+
+    try {
+        $this->artisan('db:backup')->assertSuccessful();
+
+        $folder = dirname(Storage::disk('backups_disk')->path(dumps('backups/sqlite_backup')[0]));
+
+        expect(fileperms($folder) & 0777)->not->toBe(0700)
+            ->and(fileperms($listenerFile) & 0777)->toBe(0644)
+            ->and(umask())->toBe(0022);
+    } finally {
+        @unlink($listenerFile);
+        umask($previous);
+    }
+});
+
+it('reports success and dispatches BackupChecksumFailed when the checksum cannot be written', function (): void {
+    Event::fake([BackupChecksumFailed::class, BackupFailed::class]);
+
+    $disk = Mockery::mock(Storage::disk('backups_disk'))->makePartial();
+    $disk->shouldReceive('put')->withArgs(fn (string $path): bool => str_ends_with($path, '.sha256'))->andReturnFalse();
+    Storage::set('backups_disk', $disk);
+
+    $this->artisan('db:backup')->assertSuccessful();
+
+    expect(dumps('backups/sqlite_backup'))->toHaveCount(1);
+    Event::assertDispatched(BackupChecksumFailed::class);
+    Event::assertNotDispatched(BackupFailed::class);
+});
+
+it('resolves a per-user temp directory at runtime when none is configured', function (): void {
+    config()->set('database-backup.temp_directory');
+
+    $this->artisan('db:backup')->assertSuccessful();
+
+    $user = function_exists('posix_geteuid') ? (string) posix_geteuid() : get_current_user();
+    expect(is_dir(sys_get_temp_dir().'/database-backup-'.$user))->toBeTrue();
 });

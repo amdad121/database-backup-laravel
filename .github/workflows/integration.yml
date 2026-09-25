@@ -1,0 +1,87 @@
+name: integration
+
+on:
+  push:
+    paths:
+      - "**.php"
+      - ".github/workflows/integration.yml"
+      - "composer.json"
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - db: mysql
+            image: mysql:8.0
+            port: 3306
+          - db: mariadb
+            image: mariadb:10.11
+            port: 3306
+          - db: pgsql
+            image: postgres:16
+            port: 5432
+
+    name: Integration - ${{ matrix.db }}
+
+    services:
+      database:
+        image: ${{ matrix.image }}
+        # The mysql/mariadb images write the root password into their own option
+        # file unescaped, so root gets a plain password and the tests connect as
+        # a separate user whose password exercises the quoting.
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: backup_it
+          MYSQL_USER: backup
+          MYSQL_PASSWORD: "s3cr\"et p#ss"
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: backup_it
+          MARIADB_USER: backup
+          MARIADB_PASSWORD: "s3cr\"et p#ss"
+          POSTGRES_PASSWORD: "s3cr\"et p#ss"
+          POSTGRES_DB: backup_it
+        ports:
+          - ${{ matrix.port }}:${{ matrix.port }}
+        options: >-
+          --health-cmd="${{ matrix.db == 'pgsql' && 'pg_isready' || (matrix.db == 'mariadb' && 'healthcheck.sh --connect --innodb_initialized' || 'mysqladmin ping -h 127.0.0.1') }}"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install MariaDB client
+        if: matrix.db == 'mariadb'
+        run: |
+          sudo apt-get update
+          sudo apt-get purge -y 'mysql-*'
+          sudo apt-get install -y mariadb-client
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: pdo, pdo_mysql, pdo_pgsql, pdo_sqlite, intl, zlib
+          coverage: none
+
+      - name: Install composer dependencies
+        uses: ramsey/composer-install@v4
+
+      - name: Client versions
+        run: |
+          if [ "${{ matrix.db }}" = "pgsql" ]; then pg_dump --version; psql --version;
+          elif [ "${{ matrix.db }}" = "mariadb" ]; then mariadb-dump --version; mariadb --version;
+          else mysqldump --version; mysql --version; fi
+
+      - name: Run integration tests
+        env:
+          DB_BACKUP_IT_DRIVER: ${{ matrix.db }}
+          DB_BACKUP_IT_PORT: ${{ matrix.port }}
+          DB_BACKUP_IT_DATABASE: backup_it
+          DB_BACKUP_IT_USERNAME: ${{ matrix.db == 'pgsql' && 'postgres' || 'backup' }}
+          DB_BACKUP_IT_PASSWORD: "s3cr\"et p#ss"
+        run: vendor/bin/pest tests/IntegrationTest.php --ci

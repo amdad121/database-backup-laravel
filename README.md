@@ -140,7 +140,7 @@ Schedule it in `routes/console.php`:
 ```php
 use Illuminate\Support\Facades\Schedule;
 
-Schedule::command('db:backup')->dailyAt('02:00');
+Schedule::command('db:backup')->dailyAt('02:00')->withoutOverlapping();
 ```
 
 ### Restore
@@ -182,7 +182,7 @@ The backup's type must match the connection: a `.sql[.gz]` file for
 | `retention.keep_last` | `DB_BACKUP_KEEP_LAST` | `7` | Keep at most N backups for the connection (0 = unlimited) |
 | `retention.keep_days` | `DB_BACKUP_KEEP_DAYS` | `30` | Delete backups older than N days (0 = off) |
 | `timeout` | `DB_BACKUP_TIMEOUT` | `900` | Max seconds for the dump |
-| `temp_directory` | `DB_BACKUP_TEMP_DIR` | system temp dir | Local scratch dir (dump/restore) |
+| `temp_directory` | `DB_BACKUP_TEMP_DIR` | `{system temp}/database-backup-{uid}` | Local scratch dir (dump/restore), resolved per user at runtime |
 | `binaries.*` | `DB_BACKUP_BIN_MYSQLDUMP` / `DB_BACKUP_BIN_MYSQL` / `DB_BACKUP_BIN_PGDUMP` / `DB_BACKUP_BIN_PSQL` / `DB_BACKUP_BIN_MARIADB_DUMP` / `DB_BACKUP_BIN_MARIADB` | on `$PATH` | Paths to `mysqldump` / `mysql` / `pg_dump` / `psql` |
 | `extra_options.*` | — | see config | Raw args appended per driver (`mysql`, `mariadb`, `pgsql`) |
 
@@ -207,6 +207,7 @@ are created with mode `0600` in a per-user `0700` temp directory.
 - `AmdadulHaq\DatabaseBackup\Events\BackupCompleted` — `connection`, `disk`, `remotePath`, `bytes`
 - `AmdadulHaq\DatabaseBackup\Events\BackupFailed` — `connection`, `exception`
 - `AmdadulHaq\DatabaseBackup\Events\BackupPruneFailed` — `connection`, `exception` (the backup itself succeeded)
+- `AmdadulHaq\DatabaseBackup\Events\BackupChecksumFailed` — `connection`, `remotePath`, `exception` (the backup itself succeeded)
 - `AmdadulHaq\DatabaseBackup\Events\RestoreCompleted` — `connection`, `disk`, `remotePath`
 - `AmdadulHaq\DatabaseBackup\Events\RestoreFailed` — `connection`, `exception`
 
@@ -237,6 +238,15 @@ Each database type is a small class implementing the `Dumper` contract
 
 ```bash
 composer test
+```
+
+The integration tests back up and restore a real MySQL, MariaDB or PostgreSQL
+server; they are skipped unless `DB_BACKUP_IT_DRIVER` is set:
+
+```bash
+DB_BACKUP_IT_DRIVER=pgsql DB_BACKUP_IT_PORT=5432 DB_BACKUP_IT_DATABASE=backup_it \
+DB_BACKUP_IT_USERNAME=postgres DB_BACKUP_IT_PASSWORD=secret \
+vendor/bin/pest tests/IntegrationTest.php
 ```
 
 ## Changelog
