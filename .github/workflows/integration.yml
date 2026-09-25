@@ -30,11 +30,18 @@ jobs:
     services:
       database:
         image: ${{ matrix.image }}
+        # The mysql/mariadb images write the root password into their own option
+        # file unescaped, so root gets a plain password and the tests connect as
+        # a separate user whose password exercises the quoting.
         env:
-          MYSQL_ROOT_PASSWORD: "s3cr\"et p#ss"
+          MYSQL_ROOT_PASSWORD: root
           MYSQL_DATABASE: backup_it
-          MARIADB_ROOT_PASSWORD: "s3cr\"et p#ss"
+          MYSQL_USER: backup
+          MYSQL_PASSWORD: "s3cr\"et p#ss"
+          MARIADB_ROOT_PASSWORD: root
           MARIADB_DATABASE: backup_it
+          MARIADB_USER: backup
+          MARIADB_PASSWORD: "s3cr\"et p#ss"
           POSTGRES_PASSWORD: "s3cr\"et p#ss"
           POSTGRES_DB: backup_it
         ports:
@@ -75,6 +82,6 @@ jobs:
           DB_BACKUP_IT_DRIVER: ${{ matrix.db }}
           DB_BACKUP_IT_PORT: ${{ matrix.port }}
           DB_BACKUP_IT_DATABASE: backup_it
-          DB_BACKUP_IT_USERNAME: ${{ matrix.db == 'pgsql' && 'postgres' || 'root' }}
+          DB_BACKUP_IT_USERNAME: ${{ matrix.db == 'pgsql' && 'postgres' || 'backup' }}
           DB_BACKUP_IT_PASSWORD: "s3cr\"et p#ss"
         run: vendor/bin/pest tests/IntegrationTest.php --ci
