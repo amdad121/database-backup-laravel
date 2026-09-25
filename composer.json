@@ -36,7 +36,7 @@
         "symfony/process": "^7.0|^8.0"
     },
     "require-dev": {
-        "driftingly/rector-laravel": "^2.0",
+        "driftingly/rector-laravel": "^2.0.3",
         "larastan/larastan": "^3.0",
         "laravel/pint": "^1.0",
         "orchestra/testbench": "^10.0|^11.0",

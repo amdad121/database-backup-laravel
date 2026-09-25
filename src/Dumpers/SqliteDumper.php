@@ -38,7 +38,7 @@ final class SqliteDumper extends ProcessDumper
         } catch (BackupFailedException $backupFailedException) {
             throw $backupFailedException;
         } catch (Throwable $throwable) {
-            throw new BackupFailedException("Unable to back up SQLite database [{$database}]: {$throwable->getMessage()}", previous: $throwable);
+            throw new BackupFailedException("Unable to back up SQLite database [{$database}]: {$throwable->getMessage()}", (int) $throwable->getCode(), previous: $throwable);
         }
     }
 }

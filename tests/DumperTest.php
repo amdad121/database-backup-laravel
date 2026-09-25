@@ -5,6 +5,8 @@ declare(strict_types=1);
 use AmdadulHaq\DatabaseBackup\Concerns\MysqlClient;
 use AmdadulHaq\DatabaseBackup\Dumpers\MysqlDumper;
 use AmdadulHaq\DatabaseBackup\Dumpers\PostgresDumper;
+use AmdadulHaq\DatabaseBackup\Dumpers\SqliteDumper;
+use AmdadulHaq\DatabaseBackup\Exceptions\BackupFailedException;
 
 it('builds the mysqldump command', function (): void {
     $dumper = new MysqlDumper(
@@ -141,3 +143,14 @@ it('writes a private option file with the escaped password and removes it', func
         ->and($mode)->toBe(0600)
         ->and(file_exists($file))->toBeFalse();
 });
+
+it('wraps a PDOException with a string SQLSTATE code when a sqlite backup fails', function (): void {
+    $database = sys_get_temp_dir().'/not-a-db-'.bin2hex(random_bytes(4)).'.sqlite';
+    file_put_contents($database, str_repeat('garbage', 1024));
+
+    try {
+        (new SqliteDumper)->dump(['database' => $database], $database.'.bak');
+    } finally {
+        @unlink($database);
+    }
+})->throws(BackupFailedException::class, 'Unable to back up SQLite database');

@@ -99,7 +99,7 @@ it('removes a stale WAL file when restoring sqlite', function (): void {
     expect(file_exists($dir.'/app.sqlite-wal'))->toBeFalse()
         ->and(file_get_contents($dir.'/app.sqlite', false, null, 0, 15))->toBe('SQLite format 3');
 
-    array_map('unlink', glob($dir.'/*'));
+    array_map(unlink(...), glob($dir.'/*'));
     rmdir($dir);
 });
 
@@ -114,6 +114,6 @@ it('makes a newly created sqlite database readable by the web server', function 
 
     expect(fileperms($dir.'/app.sqlite') & 0777)->toBe(0644);
 
-    array_map('unlink', glob($dir.'/*'));
+    array_map(unlink(...), glob($dir.'/*'));
     rmdir($dir);
 });

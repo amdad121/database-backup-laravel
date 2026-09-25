@@ -23,8 +23,8 @@ class ListBackupsCommand extends Command
 
         try {
             $backups = $manager->backups($connection);
-        } catch (BackupFailedException $e) {
-            $this->components->error($e->getMessage());
+        } catch (BackupFailedException $backupFailedException) {
+            $this->components->error($backupFailedException->getMessage());
 
             return self::FAILURE;
         }
