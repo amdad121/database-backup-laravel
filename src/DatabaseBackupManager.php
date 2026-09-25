@@ -168,6 +168,7 @@ class DatabaseBackupManager
 
         try {
             $this->download($disk, $remote, $local);
+            $this->verifyChecksum($disk, $remote, $local);
 
             if (str_ends_with($local, '.gz')) {
                 $local = $this->gunzip($local);
@@ -253,13 +254,16 @@ class DatabaseBackupManager
     }
 
     /**
-     * Backups live in "{path}/{connection}/". Files that older releases stored
-     * directly in "{path}/" are still recognised when their name matches this
-     * connection and database exactly.
+     * Backups live in "{path}/{connection}/", using the connection name as-is
+     * (slugging would map "mysql_old" and "mysql-old" to one folder). Files that
+     * older releases stored directly in "{path}/" are still recognised when their
+     * name matches this connection and database exactly.
      */
     private function connectionFolder(string $connection): string
     {
-        return ltrim(trim((string) $this->config->get('database-backup.path', ''), '/').'/'.Str::slug($connection), '/');
+        $folder = str_replace(['/', '\\'], '-', $connection);
+
+        return ltrim(trim((string) $this->config->get('database-backup.path', ''), '/').'/'.$folder, '/');
     }
 
     /**
@@ -277,12 +281,12 @@ class DatabaseBackupManager
      */
     private function remotePath(Filesystem $disk, string $connection, array $connectionConfig, string $extension): string
     {
+        // A random suffix keeps concurrent backups in the same second from colliding.
         $base = $this->connectionFolder($connection).'/'.$this->filePrefix($connection, $connectionConfig).now()->format('Y-m-d_His');
-        $remote = "{$base}.{$extension}";
 
-        for ($i = 2; $disk->exists($remote); $i++) {
-            $remote = "{$base}-{$i}.{$extension}";
-        }
+        do {
+            $remote = $base.'-'.Str::lower(Str::random(6)).'.'.$extension;
+        } while ($disk->exists($remote));
 
         return $remote;
     }
@@ -295,7 +299,7 @@ class DatabaseBackupManager
      */
     private function backupFiles(Filesystem $disk, string $connection, array $connectionConfig): array
     {
-        $suffix = '(\d{4}-\d{2}-\d{2}_\d{6})(?:-(\d+))?\.(?:sql|sqlite)(?:\.gz)?$/';
+        $suffix = '(\d{4}-\d{2}-\d{2}_\d{6})(?:-([a-z0-9]+))?\.(?:sql|sqlite)(?:\.gz)?$/';
         $legacy = '/^'.preg_quote($this->filePrefix($connection, $connectionConfig), '/').$suffix;
         $root = trim((string) $this->config->get('database-backup.path', ''), '/');
 
@@ -310,7 +314,7 @@ class DatabaseBackupManager
 
         foreach (array_unique($candidates) as $file) {
             if (preg_match('/-'.$suffix, basename($file), $m) === 1) {
-                $backups[$file] = $m[1].'#'.str_pad($m[2] ?? '1', 6, '0', STR_PAD_LEFT);
+                $backups[$file] = $m[1].'#'.($m[2] ?? '');
             }
         }
 
@@ -365,9 +369,9 @@ class DatabaseBackupManager
         $dir = (string) ($settings['temp_directory'] ?? sys_get_temp_dir());
 
         throw_if(
-            ! is_dir($dir) && ! @mkdir($dir, 0700, true) && ! is_dir($dir),
+            ! is_dir($dir) && ! @mkdir($dir, 0700, true) && ! is_dir($dir) || ! is_writable($dir),
             $exception,
-            "Unable to create temp directory [{$dir}].",
+            "Unable to create or write to temp directory [{$dir}].",
         );
 
         return $dir;
@@ -409,6 +413,37 @@ class DatabaseBackupManager
                 fclose($stream);
             }
         }
+
+        $size = filesize($local);
+        throw_unless(
+            $disk->size($remote) === $size,
+            BackupFailedException::class,
+            "Uploaded backup [{$remote}] is {$disk->size($remote)} bytes, expected {$size}.",
+        );
+
+        throw_if(
+            $disk->put($remote.'.sha256', (string) hash_file('sha256', $local)) === false,
+            BackupFailedException::class,
+            "Failed to write the checksum for [{$remote}].",
+        );
+    }
+
+    /**
+     * Compare the download with the checksum written at backup time (when there is one).
+     */
+    private function verifyChecksum(Filesystem $disk, string $remote, string $local): void
+    {
+        if (! $disk->exists($remote.'.sha256')) {
+            return;
+        }
+
+        $expected = trim((string) $disk->get($remote.'.sha256'));
+
+        throw_unless(
+            hash_equals($expected, (string) hash_file('sha256', $local)),
+            RestoreFailedException::class,
+            "Backup [{$remote}] does not match its checksum; it is corrupt or incomplete.",
+        );
     }
 
     private function gzip(string $path): string
@@ -433,7 +468,20 @@ class DatabaseBackupManager
         $out = substr($path, 0, -3);
 
         try {
-            $this->copyFile('compress.zlib://'.$path, $out);
+            $written = $this->copyFile('compress.zlib://'.$path, $out);
+
+            // zlib stops silently at the end of a truncated file; the gzip trailer's
+            // last 4 bytes hold the uncompressed size (mod 2^32) to catch that.
+            $handle = fopen($path, 'rb');
+            throw_if($handle === false || fseek($handle, -4, SEEK_END) !== 0, RuntimeException::class, 'cannot read the gzip trailer');
+            $trailer = unpack('V', (string) fread($handle, 4));
+            fclose($handle);
+
+            throw_unless(
+                is_array($trailer) && $trailer[1] === ($written & 0xFFFFFFFF),
+                RuntimeException::class,
+                'the file is truncated or corrupt',
+            );
         } catch (Throwable $throwable) {
             @unlink($out);
 
@@ -449,7 +497,7 @@ class DatabaseBackupManager
      * Copy $from to $to, failing on any short or failed write (e.g. a full
      * disk) so a truncated file is never treated as a good backup.
      */
-    private function copyFile(string $from, string $to, int|false|null $expected = null): void
+    private function copyFile(string $from, string $to, int|false|null $expected = null): int
     {
         $in = fopen($from, 'rb');
         throw_if($in === false, RuntimeException::class, 'cannot open the source file');
@@ -466,6 +514,8 @@ class DatabaseBackupManager
             $closed = fclose($out);
             $out = false;
             throw_unless($closed, RuntimeException::class, 'write failed (disk full?)');
+
+            return $copied;
         } finally {
             if ($out !== false) {
                 fclose($out);
@@ -498,6 +548,10 @@ class DatabaseBackupManager
 
             if (($keepLast > 0 && $index >= $keepLast) || ($cutoff !== null && $disk->lastModified($file) < $cutoff)) {
                 $disk->delete($file);
+
+                if ($disk->exists($file.'.sha256')) {
+                    $disk->delete($file.'.sha256');
+                }
             }
         }
     }

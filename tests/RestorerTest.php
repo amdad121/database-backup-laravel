@@ -31,7 +31,7 @@ it('builds the psql restore command and password env', function (): void {
     ])->and($restorer->env(['password' => 'p@ss']))->toBe(['PGPASSWORD' => 'p@ss']);
 });
 
-it('builds the mysql restore command and password env', function (): void {
+it('builds the mysql restore command', function (): void {
     $restorer = new MysqlRestorer;
 
     $command = $restorer->command([
@@ -48,7 +48,7 @@ it('builds the mysql restore command and password env', function (): void {
         '--port=3307',
         '--user=backup',
         'shop',
-    ])->and($restorer->env(['password' => 's3cret']))->toBe(['MYSQL_PWD' => 's3cret']);
+    ]);
 });
 
 it('adds --socket for a mysql restore over a unix socket', function (): void {
@@ -98,6 +98,21 @@ it('removes a stale WAL file when restoring sqlite', function (): void {
 
     expect(file_exists($dir.'/app.sqlite-wal'))->toBeFalse()
         ->and(file_get_contents($dir.'/app.sqlite', false, null, 0, 15))->toBe('SQLite format 3');
+
+    array_map('unlink', glob($dir.'/*'));
+    rmdir($dir);
+});
+
+it('makes a newly created sqlite database readable by the web server', function (): void {
+    $dir = sys_get_temp_dir().'/sqlite-restore-'.bin2hex(random_bytes(4));
+    mkdir($dir);
+    $source = $dir.'/backup.sqlite';
+    (new PDO('sqlite:'.$source))->exec('CREATE TABLE t (id INTEGER)');
+    chmod($source, 0600);
+
+    (new SqliteRestorer)->restore(['database' => $dir.'/app.sqlite'], $source);
+
+    expect(fileperms($dir.'/app.sqlite') & 0777)->toBe(0644);
 
     array_map('unlink', glob($dir.'/*'));
     rmdir($dir);

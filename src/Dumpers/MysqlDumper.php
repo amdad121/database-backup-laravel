@@ -4,31 +4,41 @@ declare(strict_types=1);
 
 namespace AmdadulHaq\DatabaseBackup\Dumpers;
 
-use AmdadulHaq\DatabaseBackup\Concerns\MysqlBinary;
+use AmdadulHaq\DatabaseBackup\Concerns\MysqlClient;
+use AmdadulHaq\DatabaseBackup\Exceptions\BackupFailedException;
 
 /**
  * Dumps MySQL and MariaDB connections with mysqldump.
  */
 final class MysqlDumper extends ProcessDumper
 {
-    use MysqlBinary;
+    use MysqlClient;
 
     /**
      * @param  array<string, mixed>  $connection
      */
     public function dump(array $connection, string $target): void
     {
-        $this->run($this->command($connection, $target), $this->env($connection));
+        $this->withDefaultsFile($connection, fn (string $defaults) => $this->run($this->command($connection, $target, $defaults), []));
     }
 
     /**
      * @param  array<string, mixed>  $connection
+     * @param  string|null  $defaults  Option file holding the password.
      * @return list<string>
      */
-    public function command(array $connection, string $target): array
+    public function command(array $connection, string $target, ?string $defaults = null): array
     {
+        $driver = $this->config($connection, 'driver', 'mysql');
+        $command = [$this->mysqlBinary($driver, 'mysqldump', 'mariadb-dump')];
+
+        if ($defaults !== null) {
+            // Must be the first option.
+            $command[] = '--defaults-extra-file='.$defaults;
+        }
+
         $command = [
-            $this->mysqlBinary($this->config($connection, 'driver', 'mysql'), 'mysqldump', 'mariadb-dump'),
+            ...$command,
             '--host='.$this->config($connection, 'host', '127.0.0.1'),
             '--port='.$this->config($connection, 'port', '3306'),
             '--user='.$this->config($connection, 'username', 'root'),
@@ -41,17 +51,14 @@ final class MysqlDumper extends ProcessDumper
 
         return [
             ...$command,
-            ...$this->optionsFor($this->config($connection, 'driver', 'mysql')),
+            ...$this->sslFlags($connection),
+            ...$this->optionsFor($driver),
             $this->config($connection, 'database'),
         ];
     }
 
-    /**
-     * @param  array<string, mixed>  $connection
-     * @return array<string, string>
-     */
-    public function env(array $connection): array
+    protected function failure(): string
     {
-        return ['MYSQL_PWD' => $this->config($connection, 'password')];
+        return BackupFailedException::class;
     }
 }

@@ -7,6 +7,8 @@ namespace AmdadulHaq\DatabaseBackup\Console;
 use AmdadulHaq\DatabaseBackup\DatabaseBackupManager;
 use AmdadulHaq\DatabaseBackup\Exceptions\BackupFailedException;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Date;
+use Illuminate\Support\Number;
 
 class ListBackupsCommand extends Command
 {
@@ -37,25 +39,11 @@ class ListBackupsCommand extends Command
             ['File', 'Size', 'Modified'],
             array_map(fn (array $backup): array => [
                 $backup['path'],
-                $this->humanSize($backup['size']),
-                date('Y-m-d H:i:s', $backup['modified']),
+                Number::fileSize($backup['size'], precision: 1),
+                Date::createFromTimestamp($backup['modified'], (string) config('app.timezone', 'UTC'))->toDateTimeString(),
             ], $backups),
         );
 
         return self::SUCCESS;
-    }
-
-    private function humanSize(int $bytes): string
-    {
-        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
-        $i = 0;
-        $size = (float) $bytes;
-
-        while ($size >= 1024 && $i < count($units) - 1) {
-            $size /= 1024;
-            $i++;
-        }
-
-        return $i === 0 ? "{$bytes} B" : number_format($size, 1).' '.$units[$i];
     }
 }

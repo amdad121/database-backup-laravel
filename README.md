@@ -17,6 +17,7 @@ the local disk by default, or an S3-compatible API such as **Cloudflare R2**,
 
 - PHP 8.2, 8.3, 8.4, or 8.5
 - Laravel 12 or 13
+- PHP extensions `intl` and `zlib`; `pdo_sqlite` with SQLite 3.27+ for SQLite backups
 - `pg_dump` for PostgreSQL, `mysqldump` for MySQL/MariaDB (SQLite needs neither)
 - `league/flysystem-aws-s3-v3` when the destination disk is an S3 disk
 
@@ -163,6 +164,10 @@ so a restore drops existing objects first. MySQL restores stop at the first
 error; mysqldump emits `DROP TABLE IF EXISTS` for every table in the dump, but
 tables that exist in the target and **not** in the backup are left in place.
 
+> **MySQL / MariaDB restores are not transactional.** DDL (`DROP` / `CREATE TABLE`)
+> commits immediately, so a restore that fails halfway leaves the database partially
+> restored. Take a fresh backup before restoring.
+
 The backup's type must match the connection: a `.sql[.gz]` file for
 `pgsql` / `mysql` / `mariadb`, a `.sqlite[.gz]` file for `sqlite`.
 
@@ -183,15 +188,19 @@ The backup's type must match the connection: a `.sql[.gz]` file for
 
 Backups are stored per connection as
 `{path}/{connection}/{connection}-{database}-{Y-m-d_His}.sql` (`.sqlite` for SQLite,
-`.gz` appended when compression is on; `-2`, `-3`, ... is added if two backups land
-in the same second). Backups written by older releases directly into `{path}/` are
+`.gz` appended when compression is on). A short random suffix keeps backups started
+in the same second apart, and a `.sha256` checksum is stored next to each backup
+and verified before a restore. The folder uses the connection name as-is. Backups written by older releases directly into `{path}/` are
 still listed, restored and pruned when their name matches the connection and
 database exactly.
 
 Connections are resolved like Laravel does: `url` / `DB_URL` is expanded, and for
 read/write splits the `write` host is used. PostgreSQL `sslmode`, `sslcert`,
-`sslkey` and `sslrootcert` are passed to `pg_dump` / `psql`. Local dump files are
-created with mode `0600` in a `0700` temp directory.
+`sslkey` and `sslrootcert` are passed to `pg_dump` / `psql`; MySQL SSL PDO options
+(`PDO::MYSQL_ATTR_SSL_CA`, `_CERT`, `_KEY`, `_CAPATH`, `_CIPHER`,
+`_VERIFY_SERVER_CERT`) become `--ssl-*` flags. The MySQL password is passed in a
+private option file (`--defaults-extra-file`), not the environment. Local dump files
+are created with mode `0600` in a per-user `0700` temp directory.
 
 ## Events
 

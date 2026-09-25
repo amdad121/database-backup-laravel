@@ -26,6 +26,8 @@
     ],
     "require": {
         "php": "^8.2|^8.3|^8.4|^8.5",
+        "ext-intl": "*",
+        "ext-zlib": "*",
         "illuminate/console": "^12.0|^13.0",
         "illuminate/contracts": "^12.0|^13.0",
         "illuminate/database": "^12.0|^13.0",

@@ -4,16 +4,17 @@ declare(strict_types=1);
 
 namespace AmdadulHaq\DatabaseBackup\Restorers;
 
-use AmdadulHaq\DatabaseBackup\Concerns\MysqlBinary;
+use AmdadulHaq\DatabaseBackup\Concerns\MysqlClient;
 use AmdadulHaq\DatabaseBackup\Exceptions\RestoreFailedException;
 
 /**
  * Restores a MySQL / MariaDB SQL dump by piping it into the mysql client.
- * In batch mode the client stops at the first error.
+ * In batch mode the client stops at the first error. DDL is not
+ * transactional in MySQL, so a failed restore can leave a partial database.
  */
 final class MysqlRestorer extends ProcessRestorer
 {
-    use MysqlBinary;
+    use MysqlClient;
 
     /**
      * @param  array<string, mixed>  $connection
@@ -24,7 +25,7 @@ final class MysqlRestorer extends ProcessRestorer
         throw_if($input === false, RestoreFailedException::class, "Unable to read [{$source}].");
 
         try {
-            $this->run($this->command($connection), $this->env($connection), $input);
+            $this->withDefaultsFile($connection, fn (string $defaults) => $this->run($this->command($connection, $defaults), [], $input));
         } finally {
             if (is_resource($input)) {
                 fclose($input);
@@ -34,12 +35,20 @@ final class MysqlRestorer extends ProcessRestorer
 
     /**
      * @param  array<string, mixed>  $connection
+     * @param  string|null  $defaults  Option file holding the password.
      * @return list<string>
      */
-    public function command(array $connection): array
+    public function command(array $connection, ?string $defaults = null): array
     {
+        $command = [$this->mysqlBinary($this->config($connection, 'driver', 'mysql'), 'mysql', 'mariadb')];
+
+        if ($defaults !== null) {
+            // Must be the first option.
+            $command[] = '--defaults-extra-file='.$defaults;
+        }
+
         $command = [
-            $this->mysqlBinary($this->config($connection, 'driver', 'mysql'), 'mysql', 'mariadb'),
+            ...$command,
             '--host='.$this->config($connection, 'host', '127.0.0.1'),
             '--port='.$this->config($connection, 'port', '3306'),
             '--user='.$this->config($connection, 'username', 'root'),
@@ -51,16 +60,13 @@ final class MysqlRestorer extends ProcessRestorer
 
         return [
             ...$command,
+            ...$this->sslFlags($connection),
             $this->config($connection, 'database'),
         ];
     }
 
-    /**
-     * @param  array<string, mixed>  $connection
-     * @return array<string, string>
-     */
-    public function env(array $connection): array
+    protected function failure(): string
     {
-        return ['MYSQL_PWD' => $this->config($connection, 'password')];
+        return RestoreFailedException::class;
     }
 }

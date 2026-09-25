@@ -59,7 +59,7 @@ it('lists legacy backups stored directly in the root folder', function (): void 
 
 it('resolves the database name from a connection url', function (): void {
     config()->set('database.connections.pg_url', ['driver' => 'pgsql', 'url' => 'pgsql://user:secret@db.example.com:5432/shopdb']);
-    Storage::disk('backups_disk')->put('backups/pg-url/pg-url-shopdb-2026-01-01_000000.sql.gz', 'x');
+    Storage::disk('backups_disk')->put('backups/pg_url/pg-url-shopdb-2026-01-01_000000.sql.gz', 'x');
 
     $this->artisan('db:backups', ['--connection' => 'pg_url'])
         ->assertSuccessful()

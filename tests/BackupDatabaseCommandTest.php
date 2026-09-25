@@ -39,10 +39,10 @@ it('dumps the configured connection and uploads it to the disk', function (): vo
 
     $this->artisan('db:backup')->assertSuccessful();
 
-    $files = Storage::disk('backups_disk')->files('backups/sqlite-backup');
+    $files = dumps('backups/sqlite_backup');
 
     expect($files)->toHaveCount(1)
-        ->and($files[0])->toStartWith('backups/sqlite-backup/sqlite-backup-');
+        ->and($files[0])->toStartWith('backups/sqlite_backup/sqlite-backup-');
 
     $restored = sys_get_temp_dir().'/db-backup-restored-'.bin2hex(random_bytes(6)).'.sqlite';
     file_put_contents($restored, Storage::disk('backups_disk')->get($files[0]));
@@ -59,7 +59,7 @@ it('gzips the dump when compression is on', function (): void {
 
     $this->artisan('db:backup')->assertSuccessful();
 
-    expect(Storage::disk('backups_disk')->files('backups/sqlite-backup')[0])->toEndWith('.sqlite.gz');
+    expect(dumps('backups/sqlite_backup')[0])->toEndWith('.sqlite.gz');
 });
 
 it('backs up the connection passed via --connection', function (): void {
@@ -67,7 +67,7 @@ it('backs up the connection passed via --connection', function (): void {
 
     $this->artisan('db:backup', ['--connection' => 'sqlite_backup'])->assertSuccessful();
 
-    expect(Storage::disk('backups_disk')->files('backups/sqlite-backup'))->toHaveCount(1);
+    expect(dumps('backups/sqlite_backup'))->toHaveCount(1);
 });
 
 it('stores backups under an app-name folder so a bucket can be shared', function (): void {
@@ -75,19 +75,19 @@ it('stores backups under an app-name folder so a bucket can be shared', function
 
     $this->artisan('db:backup')->assertSuccessful();
 
-    expect(Storage::disk('backups_disk')->files('acme-site/sqlite-backup'))->toHaveCount(1);
+    expect(dumps('acme-site/sqlite_backup'))->toHaveCount(1);
 });
 
 it('prunes older backups beyond keep_last', function (): void {
     config()->set('database-backup.retention.keep_last', 2);
 
-    Storage::disk('backups_disk')->put('backups/sqlite-backup/sqlite-backup-db-2020-01-01_000000.sqlite', 'old');
-    Storage::disk('backups_disk')->put('backups/sqlite-backup/sqlite-backup-db-2020-01-02_000000.sqlite', 'old');
+    Storage::disk('backups_disk')->put('backups/sqlite_backup/sqlite-backup-db-2020-01-01_000000.sqlite', 'old');
+    Storage::disk('backups_disk')->put('backups/sqlite_backup/sqlite-backup-db-2020-01-02_000000.sqlite', 'old');
 
     $this->artisan('db:backup')->assertSuccessful();
 
-    expect(Storage::disk('backups_disk')->files('backups/sqlite-backup'))->toHaveCount(2)
-        ->and(Storage::disk('backups_disk')->exists('backups/sqlite-backup/sqlite-backup-db-2020-01-02_000000.sqlite'))->toBeTrue();
+    expect(dumps('backups/sqlite_backup'))->toHaveCount(2)
+        ->and(Storage::disk('backups_disk')->exists('backups/sqlite_backup/sqlite-backup-db-2020-01-02_000000.sqlite'))->toBeTrue();
 });
 
 it('never prunes backups of a connection whose name shares a prefix', function (): void {
@@ -96,14 +96,14 @@ it('never prunes backups of a connection whose name shares a prefix', function (
 
     // Legacy flat layout and the new per-connection folder.
     Storage::disk('backups_disk')->put('backups/sqlite-backup-replica-other-2020-01-01_000000.sqlite', 'keep');
-    Storage::disk('backups_disk')->put('backups/sqlite-backup-replica/sqlite-backup-replica-other-2020-01-01_000000.sqlite', 'keep');
+    Storage::disk('backups_disk')->put('backups/sqlite_backup_replica/sqlite-backup-replica-other-2020-01-01_000000.sqlite', 'keep');
 
     $this->artisan('db:backup')->assertSuccessful();
     $this->artisan('db:backup')->assertSuccessful();
 
     expect(Storage::disk('backups_disk')->exists('backups/sqlite-backup-replica-other-2020-01-01_000000.sqlite'))->toBeTrue()
-        ->and(Storage::disk('backups_disk')->exists('backups/sqlite-backup-replica/sqlite-backup-replica-other-2020-01-01_000000.sqlite'))->toBeTrue()
-        ->and(Storage::disk('backups_disk')->files('backups/sqlite-backup'))->toHaveCount(1);
+        ->and(Storage::disk('backups_disk')->exists('backups/sqlite_backup_replica/sqlite-backup-replica-other-2020-01-01_000000.sqlite'))->toBeTrue()
+        ->and(dumps('backups/sqlite_backup'))->toHaveCount(1);
 });
 
 it('prunes legacy backups stored in the root folder', function (): void {
@@ -123,7 +123,7 @@ it('does not overwrite a backup taken in the same second', function (): void {
     $this->artisan('db:backup')->assertSuccessful();
     $this->artisan('db:backup')->assertSuccessful();
 
-    expect(Storage::disk('backups_disk')->files('backups/sqlite-backup'))->toHaveCount(2);
+    expect(dumps('backups/sqlite_backup'))->toHaveCount(2);
 });
 
 it('captures committed data still in the WAL file', function (): void {
@@ -136,7 +136,7 @@ it('captures committed data still in the WAL file', function (): void {
     $pdo = null;
 
     $restored = sys_get_temp_dir().'/db-backup-wal-'.bin2hex(random_bytes(6)).'.sqlite';
-    file_put_contents($restored, Storage::disk('backups_disk')->get(Storage::disk('backups_disk')->files('backups/sqlite-backup')[0]));
+    file_put_contents($restored, Storage::disk('backups_disk')->get(dumps('backups/sqlite_backup')[0]));
     $count = (new PDO('sqlite:'.$restored))->query('SELECT COUNT(*) FROM items')->fetchColumn();
     @unlink($restored);
     @unlink($this->dbFile.'-wal');
@@ -153,7 +153,7 @@ it('keeps the backup and reports success when pruning fails', function (): void 
     $disk->shouldReceive('delete')->andThrow(new RuntimeException('permission denied'));
     Storage::set('backups_disk', $disk);
 
-    Storage::disk('backups_disk')->put('backups/sqlite-backup/sqlite-backup-db-2020-01-01_000000.sqlite', 'old');
+    Storage::disk('backups_disk')->put('backups/sqlite_backup/sqlite-backup-db-2020-01-01_000000.sqlite', 'old');
 
     $this->artisan('db:backup')->assertSuccessful();
 
@@ -181,4 +181,29 @@ it('fails for an unsupported driver', function (): void {
     config()->set('database-backup.connection', 'weird');
 
     $this->artisan('db:backup')->assertFailed();
+});
+
+it('keeps connections whose names only differ by _ and - apart', function (): void {
+    config()->set('database.connections.sqlite-backup', ['driver' => 'sqlite', 'database' => $this->dbFile]);
+
+    $this->artisan('db:backup')->assertSuccessful();
+    $this->artisan('db:backup', ['--connection' => 'sqlite-backup'])->assertSuccessful();
+
+    expect(dumps('backups/sqlite_backup'))->toHaveCount(1)
+        ->and(dumps('backups/sqlite-backup'))->toHaveCount(1);
+});
+
+it('stores a sha256 checksum next to each backup and prunes it with the backup', function (): void {
+    config()->set('database-backup.retention.keep_last', 1);
+
+    $this->artisan('db:backup')->assertSuccessful();
+    $first = dumps('backups/sqlite_backup')[0];
+
+    expect(Storage::disk('backups_disk')->get($first.'.sha256'))->toBe(hash('sha256', Storage::disk('backups_disk')->get($first)));
+
+    $this->travel(1)->seconds();
+    $this->artisan('db:backup')->assertSuccessful();
+
+    expect(Storage::disk('backups_disk')->exists($first))->toBeFalse()
+        ->and(Storage::disk('backups_disk')->exists($first.'.sha256'))->toBeFalse();
 });

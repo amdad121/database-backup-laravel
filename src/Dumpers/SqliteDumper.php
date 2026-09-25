@@ -30,7 +30,13 @@ final class SqliteDumper extends ProcessDumper
 
         try {
             $pdo = new PDO('sqlite:'.$database, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+            $version = (string) $pdo->getAttribute(PDO::ATTR_SERVER_VERSION);
+
+            throw_if(version_compare($version, '3.27.0', '<'), BackupFailedException::class, "SQLite {$version} is too old; backups need 3.27 or newer (VACUUM INTO).");
+
             $pdo->prepare('VACUUM INTO ?')->execute([$target]);
+        } catch (BackupFailedException $backupFailedException) {
+            throw $backupFailedException;
         } catch (Throwable $throwable) {
             throw new BackupFailedException("Unable to back up SQLite database [{$database}]: {$throwable->getMessage()}", previous: $throwable);
         }

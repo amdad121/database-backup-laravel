@@ -29,9 +29,9 @@ final class SqliteRestorer extends ProcessRestorer
         try {
             throw_unless(@copy($source, $staged), RestoreFailedException::class, "Unable to restore SQLite database to [{$database}].");
 
-            if (is_file($database)) {
-                @chmod($staged, fileperms($database) & 0777);
-            }
+            // Keep the existing file's mode; a brand-new file must still be readable
+            // by the web server (the copy was created under a private umask).
+            @chmod($staged, is_file($database) ? fileperms($database) & 0777 : 0644);
 
             // Remove the old database's WAL/journal first: left in place, SQLite could
             // replay it onto the restored file and corrupt it.
