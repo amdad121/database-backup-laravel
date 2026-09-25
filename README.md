@@ -5,7 +5,7 @@
 [![GitHub Code Style Action Status](https://img.shields.io/github/actions/workflow/status/amdad121/database-backup-laravel/fix-php-code-style-issues.yml?branch=main&label=code%20style&style=flat-square)](https://github.com/amdad121/database-backup-laravel/actions?query=workflow%3A"Fix+PHP+code+style+issues"+branch%3Amain)
 [![Total Downloads](https://img.shields.io/packagist/dt/amdadulhaq/database-backup-laravel.svg?style=flat-square)](https://packagist.org/packages/amdadulhaq/database-backup-laravel)
 [![PHP Version](https://img.shields.io/badge/PHP-8.2%2B-777BB4?style=flat-square&logo=php)](https://php.net)
-[![Laravel Version](https://img.shields.io/badge/Laravel-11%2F12%2F13-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
+[![Laravel Version](https://img.shields.io/badge/Laravel-12%2F13-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink?style=flat-square&logo=github)](https://github.com/sponsors/amdad121)
 
 Simple database backups for Laravel. Dumps one **PostgreSQL** or **MySQL / MariaDB**
@@ -16,7 +16,7 @@ the local disk by default, or an S3-compatible API such as **Cloudflare R2**,
 ## Requirements
 
 - PHP 8.2, 8.3, 8.4, or 8.5
-- Laravel 11, 12, or 13
+- Laravel 12 or 13
 - `pg_dump` for PostgreSQL, `mysqldump` for MySQL/MariaDB (SQLite needs neither)
 - `league/flysystem-aws-s3-v3` when the destination disk is an S3 disk
 

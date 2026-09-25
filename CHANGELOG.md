@@ -24,10 +24,10 @@ All notable changes to `database-backup-laravel` will be documented in this file
 - PostgreSQL `sslmode` / `sslcert` / `sslkey` / `sslrootcert` are passed to `pg_dump` / `psql`.
 - MariaDB connections use `mariadb-dump` / `mariadb` when available (`binaries.mariadb-dump` / `binaries.mariadb`).
 - `db:backups` shows sizes in B / KB / MB / GB.
-- CI now tests Laravel 11.
 
 ### Changed
 
+- **Dropped Laravel 11 support** (it no longer receives security fixes); Laravel 12 and 13 are supported.
 - gzip level lowered from 9 to 6 (much faster, near-identical size).
 
 ## v1.2.0
