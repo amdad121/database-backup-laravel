@@ -455,7 +455,7 @@ class DatabaseBackupManager
         } catch (Throwable $throwable) {
             @unlink($gz);
 
-            throw new BackupFailedException("Unable to gzip [{$path}]: {$throwable->getMessage()}", previous: $throwable);
+            throw new BackupFailedException("Unable to gzip [{$path}]: {$throwable->getMessage()}", (int) $throwable->getCode(), previous: $throwable);
         }
 
         @unlink($path);
@@ -485,7 +485,7 @@ class DatabaseBackupManager
         } catch (Throwable $throwable) {
             @unlink($out);
 
-            throw new RestoreFailedException("Unable to gunzip [{$path}]: {$throwable->getMessage()}", previous: $throwable);
+            throw new RestoreFailedException("Unable to gunzip [{$path}]: {$throwable->getMessage()}", (int) $throwable->getCode(), previous: $throwable);
         } finally {
             @unlink($path);
         }

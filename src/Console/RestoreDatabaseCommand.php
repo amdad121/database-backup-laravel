@@ -25,6 +25,7 @@ class RestoreDatabaseCommand extends Command
 
         $file = $this->argument('file');
         $file = is_string($file) ? $file : '';
+
         $latest = (bool) $this->option('latest');
 
         if (! $latest && $file === '') {
@@ -39,8 +40,8 @@ class RestoreDatabaseCommand extends Command
 
         try {
             $restored = $manager->restore($connection, $file, $latest);
-        } catch (RestoreFailedException $e) {
-            $this->components->error("Restore of [{$connection}] failed: ".$e->getMessage());
+        } catch (RestoreFailedException $restoreFailedException) {
+            $this->components->error("Restore of [{$connection}] failed: ".$restoreFailedException->getMessage());
 
             return self::FAILURE;
         }
