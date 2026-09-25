@@ -2,6 +2,43 @@
 
 All notable changes to `database-backup-laravel` will be documented in this file.
 
+## Unreleased
+
+### Fixed
+
+- Pruning, `db:backups` and `db:restore --latest` no longer mix up connections whose names share a prefix (e.g. `pgsql` and `pgsql-replica`), which could delete or restore another connection's backups. Backups are now stored in a per-connection folder (`{path}/{connection}/`); legacy files in `{path}/` are still recognised when the name matches exactly.
+- SQLite backups use `VACUUM INTO`, so committed data still in the WAL file is included and the snapshot is consistent.
+- SQLite restores swap the file in atomically and remove stale `-wal` / `-shm` / `-journal` files that could corrupt the restored database.
+- gzip / gunzip / download now fail on short or failed writes (e.g. a full disk) instead of uploading a truncated backup.
+- Connections configured with `url` / `DB_URL` or read/write hosts are resolved correctly.
+- Local dump files are no longer world-readable (temp dir `0700`, files `0600`).
+- `db:restore` reports every failure (e.g. temp dir errors, disk exceptions) as a clean error; `db:backups` does the same for disk errors.
+- MySQL / MariaDB restores pipe the dump to stdin instead of `SOURCE <path>`, so temp paths with spaces work.
+- Two backups in the same second (even concurrent ones) no longer overwrite each other: names get a short random suffix; "latest" and retention order by the timestamp in the file name.
+- A truncated `.gz` backup is rejected (gzip trailer size check) instead of restoring a partial dump.
+- Each backup gets a `.sha256` checksum, verified before restore and pruned with the backup; the upload size is verified too.
+- The per-connection folder uses the connection name as-is, so `mysql_old` and `mysql-old` no longer share one.
+- A restored SQLite database that did not exist before is created `0644` so the web server can read it.
+- The default temp directory is per user (`database-backup-{uid}`), so one created by root's cron no longer blocks other users.
+- A pruning error no longer marks a successful backup as failed; `BackupPruneFailed` is dispatched instead.
+- `db:restore` refuses a backup whose type does not match the connection's driver.
+
+### Added
+
+- `RestoreCompleted`, `RestoreFailed` and `BackupPruneFailed` events.
+- PostgreSQL `sslmode` / `sslcert` / `sslkey` / `sslrootcert` are passed to `pg_dump` / `psql`.
+- MySQL / MariaDB SSL PDO options are passed as `--ssl-*` flags.
+- A clear error when SQLite is older than 3.27 (needed for `VACUUM INTO`).
+- MariaDB connections use `mariadb-dump` / `mariadb` when available (`binaries.mariadb-dump` / `binaries.mariadb`).
+- `db:backups` shows human-readable sizes (`Number::fileSize()`) and times in the app timezone.
+
+### Changed
+
+- **Dropped Laravel 11 support** (it no longer receives security fixes); Laravel 12 and 13 are supported.
+- The MySQL password is passed via a private `--defaults-extra-file` instead of the deprecated `MYSQL_PWD`.
+- Requires `ext-intl` and `ext-zlib`.
+- gzip level lowered from 9 to 6 (much faster, near-identical size).
+
 ## v1.2.0
 
 ### Added

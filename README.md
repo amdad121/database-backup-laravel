@@ -5,7 +5,7 @@
 [![GitHub Code Style Action Status](https://img.shields.io/github/actions/workflow/status/amdad121/database-backup-laravel/fix-php-code-style-issues.yml?branch=main&label=code%20style&style=flat-square)](https://github.com/amdad121/database-backup-laravel/actions?query=workflow%3A"Fix+PHP+code+style+issues"+branch%3Amain)
 [![Total Downloads](https://img.shields.io/packagist/dt/amdadulhaq/database-backup-laravel.svg?style=flat-square)](https://packagist.org/packages/amdadulhaq/database-backup-laravel)
 [![PHP Version](https://img.shields.io/badge/PHP-8.2%2B-777BB4?style=flat-square&logo=php)](https://php.net)
-[![Laravel Version](https://img.shields.io/badge/Laravel-11%2F12%2F13-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
+[![Laravel Version](https://img.shields.io/badge/Laravel-12%2F13-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink?style=flat-square&logo=github)](https://github.com/sponsors/amdad121)
 
 Simple database backups for Laravel. Dumps one **PostgreSQL** or **MySQL / MariaDB**
@@ -16,7 +16,8 @@ the local disk by default, or an S3-compatible API such as **Cloudflare R2**,
 ## Requirements
 
 - PHP 8.2, 8.3, 8.4, or 8.5
-- Laravel 11, 12, or 13
+- Laravel 12 or 13
+- PHP extensions `intl` and `zlib`; `pdo_sqlite` with SQLite 3.27+ for SQLite backups
 - `pg_dump` for PostgreSQL, `mysqldump` for MySQL/MariaDB (SQLite needs neither)
 - `league/flysystem-aws-s3-v3` when the destination disk is an S3 disk
 
@@ -149,17 +150,26 @@ Schedule::command('db:backup')->dailyAt('02:00');
 php artisan db:restore --latest
 
 # restore a specific file from the disk
-php artisan db:restore backups/pgsql-app-2026-09-01_020000.sql.gz
+php artisan db:restore backups/pgsql/pgsql-app-2026-09-01_020000.sql.gz
 
 # skip the "this overwrites the database" prompt (for scripts)
 php artisan db:restore --latest --force
 ```
 
 The file is pulled from the backup disk, gunzipped if needed, then piped into
-`psql` / `mysql` (SQLite is copied back over the database file). PostgreSQL
-restores run in a single transaction with `ON_ERROR_STOP`, and the default
-`pg_dump` options include `--clean --if-exists` so a restore drops existing
-objects first (mysqldump already emits `DROP TABLE IF EXISTS`).
+`psql` / `mysql` (a SQLite file is swapped in atomically and its stale `-wal` /
+`-shm` files are removed). PostgreSQL restores run in a single transaction with
+`ON_ERROR_STOP`, and the default `pg_dump` options include `--clean --if-exists`
+so a restore drops existing objects first. MySQL restores stop at the first
+error; mysqldump emits `DROP TABLE IF EXISTS` for every table in the dump, but
+tables that exist in the target and **not** in the backup are left in place.
+
+> **MySQL / MariaDB restores are not transactional.** DDL (`DROP` / `CREATE TABLE`)
+> commits immediately, so a restore that fails halfway leaves the database partially
+> restored. Take a fresh backup before restoring.
+
+The backup's type must match the connection: a `.sql[.gz]` file for
+`pgsql` / `mysql` / `mariadb`, a `.sqlite[.gz]` file for `sqlite`.
 
 ## Configuration (`config/database-backup.php` / env)
 
@@ -173,16 +183,32 @@ objects first (mysqldump already emits `DROP TABLE IF EXISTS`).
 | `retention.keep_days` | `DB_BACKUP_KEEP_DAYS` | `30` | Delete backups older than N days (0 = off) |
 | `timeout` | `DB_BACKUP_TIMEOUT` | `900` | Max seconds for the dump |
 | `temp_directory` | `DB_BACKUP_TEMP_DIR` | system temp dir | Local scratch dir (dump/restore) |
-| `binaries.*` | `DB_BACKUP_BIN_MYSQLDUMP` / `DB_BACKUP_BIN_MYSQL` / `DB_BACKUP_BIN_PGDUMP` / `DB_BACKUP_BIN_PSQL` | on `$PATH` | Paths to `mysqldump` / `mysql` / `pg_dump` / `psql` |
+| `binaries.*` | `DB_BACKUP_BIN_MYSQLDUMP` / `DB_BACKUP_BIN_MYSQL` / `DB_BACKUP_BIN_PGDUMP` / `DB_BACKUP_BIN_PSQL` / `DB_BACKUP_BIN_MARIADB_DUMP` / `DB_BACKUP_BIN_MARIADB` | on `$PATH` | Paths to `mysqldump` / `mysql` / `pg_dump` / `psql` |
 | `extra_options.*` | — | see config | Raw args appended per driver (`mysql`, `mariadb`, `pgsql`) |
 
-Backups are named `{connection}-{database}-{Y-m-d_His}.sql` (`.sqlite` for SQLite,
-`.gz` appended when compression is on).
+Backups are stored per connection as
+`{path}/{connection}/{connection}-{database}-{Y-m-d_His}.sql` (`.sqlite` for SQLite,
+`.gz` appended when compression is on). A short random suffix keeps backups started
+in the same second apart, and a `.sha256` checksum is stored next to each backup
+and verified before a restore. The folder uses the connection name as-is. Backups written by older releases directly into `{path}/` are
+still listed, restored and pruned when their name matches the connection and
+database exactly.
+
+Connections are resolved like Laravel does: `url` / `DB_URL` is expanded, and for
+read/write splits the `write` host is used. PostgreSQL `sslmode`, `sslcert`,
+`sslkey` and `sslrootcert` are passed to `pg_dump` / `psql`; MySQL SSL PDO options
+(`PDO::MYSQL_ATTR_SSL_CA`, `_CERT`, `_KEY`, `_CAPATH`, `_CIPHER`,
+`_VERIFY_SERVER_CERT`) become `--ssl-*` flags. The MySQL password is passed in a
+private option file (`--defaults-extra-file`), not the environment. Local dump files
+are created with mode `0600` in a per-user `0700` temp directory.
 
 ## Events
 
 - `AmdadulHaq\DatabaseBackup\Events\BackupCompleted` — `connection`, `disk`, `remotePath`, `bytes`
 - `AmdadulHaq\DatabaseBackup\Events\BackupFailed` — `connection`, `exception`
+- `AmdadulHaq\DatabaseBackup\Events\BackupPruneFailed` — `connection`, `exception` (the backup itself succeeded)
+- `AmdadulHaq\DatabaseBackup\Events\RestoreCompleted` — `connection`, `disk`, `remotePath`
+- `AmdadulHaq\DatabaseBackup\Events\RestoreFailed` — `connection`, `exception`
 
 ```php
 use AmdadulHaq\DatabaseBackup\Events\BackupFailed;
@@ -203,8 +229,9 @@ Each database type is a small class implementing the `Dumper` contract
 | Driver | Backup | Restore |
 | --- | --- | --- |
 | `pgsql` | `pg_dump` | `psql` |
-| `mysql` / `mariadb` | `mysqldump` | `mysql` |
-| `sqlite` | file copy | file copy |
+| `mysql` | `mysqldump` | `mysql` |
+| `mariadb` | `mariadb-dump` (falls back to `mysqldump`) | `mariadb` (falls back to `mysql`) |
+| `sqlite` | `VACUUM INTO` snapshot | atomic file swap |
 
 ## Testing
 

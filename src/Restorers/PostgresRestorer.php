@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace AmdadulHaq\DatabaseBackup\Restorers;
 
+use AmdadulHaq\DatabaseBackup\Concerns\PostgresEnvironment;
+
 /**
  * Restores a PostgreSQL SQL dump with psql.
  */
 final class PostgresRestorer extends ProcessRestorer
 {
+    use PostgresEnvironment;
+
     /**
      * @param  array<string, mixed>  $connection
      */
@@ -34,14 +38,5 @@ final class PostgresRestorer extends ProcessRestorer
             '--set=ON_ERROR_STOP=on',
             '--file='.$source,
         ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $connection
-     * @return array<string, string>
-     */
-    public function env(array $connection): array
-    {
-        return ['PGPASSWORD' => $this->config($connection, 'password')];
     }
 }

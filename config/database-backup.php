@@ -36,8 +36,8 @@ return [
     |--------------------------------------------------------------------------
     |
     | Folder on the disk to store backups in. Defaults to a slug of your
-    | APP_NAME so several sites can safely share one bucket. Files are named
-    | "{connection}-{database}-{Y-m-d_His}.sql[.gz]".
+    | APP_NAME so several sites can safely share one bucket. Each connection
+    | gets its own sub-folder: "{path}/{connection}/{connection}-{database}-{Y-m-d_His}.sql[.gz]".
     |
     */
     'path' => env('DB_BACKUP_PATH', Str::slug((string) env('APP_NAME', 'laravel'))),
@@ -75,18 +75,24 @@ return [
     | timeout        : max seconds a single dump may run.
     | temp_directory : where the local dump is written before upload; defaults
     |                  to the system temp dir so nothing lands in the app tree.
+    |                  Created with 0700 and dumps are written 0600.
     | binaries       : absolute paths to CLI tools when not on $PATH.
     | extra_options  : raw args appended to the dump command, per driver.
     |
     */
     'timeout' => (int) env('DB_BACKUP_TIMEOUT', 900),
-    'temp_directory' => env('DB_BACKUP_TEMP_DIR', sys_get_temp_dir().DIRECTORY_SEPARATOR.'database-backup'),
+    // Per-user default, so a folder first created by e.g. root's cron does not block other users.
+    'temp_directory' => env('DB_BACKUP_TEMP_DIR', sys_get_temp_dir().DIRECTORY_SEPARATOR.'database-backup-'.(function_exists('posix_geteuid') ? posix_geteuid() : get_current_user())),
 
     'binaries' => [
         'mysqldump' => env('DB_BACKUP_BIN_MYSQLDUMP', 'mysqldump'),
         'mysql' => env('DB_BACKUP_BIN_MYSQL', 'mysql'),
         'pg_dump' => env('DB_BACKUP_BIN_PGDUMP', 'pg_dump'),
         'psql' => env('DB_BACKUP_BIN_PSQL', 'psql'),
+        // MariaDB driver only; when unset, mariadb-dump / mariadb are used if on
+        // $PATH, falling back to mysqldump / mysql.
+        'mariadb-dump' => env('DB_BACKUP_BIN_MARIADB_DUMP'),
+        'mariadb' => env('DB_BACKUP_BIN_MARIADB'),
     ],
 
     'extra_options' => [

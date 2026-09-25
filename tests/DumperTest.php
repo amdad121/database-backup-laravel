@@ -2,10 +2,11 @@
 
 declare(strict_types=1);
 
+use AmdadulHaq\DatabaseBackup\Concerns\MysqlClient;
 use AmdadulHaq\DatabaseBackup\Dumpers\MysqlDumper;
 use AmdadulHaq\DatabaseBackup\Dumpers\PostgresDumper;
 
-it('builds the mysqldump command and password env', function (): void {
+it('builds the mysqldump command', function (): void {
     $dumper = new MysqlDumper(
         extraOptions: ['mysql' => ['--single-transaction', '--quick']],
     );
@@ -28,7 +29,7 @@ it('builds the mysqldump command and password env', function (): void {
         '--single-transaction',
         '--quick',
         'shop',
-    ])->and($dumper->env(['password' => 's3cret']))->toBe(['MYSQL_PWD' => 's3cret']);
+    ]);
 });
 
 it('adds --socket when the mysql connection uses a unix socket', function (): void {
@@ -93,4 +94,50 @@ it('falls back to sensible pg_dump defaults', function (): void {
         '--file=/tmp/out.sql',
         '--no-password',
     ]);
+});
+
+it('passes the password through an option file as the first mysqldump option', function (): void {
+    $command = (new MysqlDumper)->command(['driver' => 'mysql', 'database' => 'shop'], '/tmp/out.sql', '/tmp/my.cnf');
+
+    expect($command[1])->toBe('--defaults-extra-file=/tmp/my.cnf')
+        ->and(implode(' ', $command))->not->toContain('secret');
+});
+
+it('maps the PDO ssl options to mysqldump flags', function (): void {
+    $command = (new MysqlDumper)->command([
+        'driver' => 'mysql',
+        'database' => 'shop',
+        'options' => [1009 => '/certs/ca.pem', 1008 => '/certs/client.pem', 1007 => '/certs/client.key', 1014 => true],
+    ], '/tmp/out.sql');
+
+    expect($command)->toContain('--ssl-ca=/certs/ca.pem', '--ssl-cert=/certs/client.pem', '--ssl-key=/certs/client.key', '--ssl-mode=VERIFY_IDENTITY');
+});
+
+it('uses the mariadb flag for server certificate verification', function (): void {
+    $command = (new MysqlDumper)->command(['driver' => 'mariadb', 'database' => 'shop', 'options' => [1014 => true]], '/tmp/out.sql');
+
+    expect($command)->toContain('--ssl-verify-server-cert');
+});
+
+it('writes a private option file with the escaped password and removes it', function (): void {
+    $dumper = new class
+    {
+        use MysqlClient;
+
+        protected function failure(): string
+        {
+            return RuntimeException::class;
+        }
+
+        public function peek(array $connection): array
+        {
+            return $this->withDefaultsFile($connection, fn (string $file): array => [$file, file_get_contents($file), fileperms($file) & 0777]);
+        }
+    };
+
+    [$file, $contents, $mode] = $dumper->peek(['password' => 'p\\a"ss']);
+
+    expect($contents)->toBe("[client]\npassword=\"p\\\\a\"ss\"\n")
+        ->and($mode)->toBe(0600)
+        ->and(file_exists($file))->toBeFalse();
 });
