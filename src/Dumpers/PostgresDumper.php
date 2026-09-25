@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace AmdadulHaq\DatabaseBackup\Dumpers;
 
+use AmdadulHaq\DatabaseBackup\Concerns\PostgresEnvironment;
+
 /**
  * Dumps PostgreSQL connections with pg_dump.
  */
 final class PostgresDumper extends ProcessDumper
 {
+    use PostgresEnvironment;
+
     /**
      * @param  array<string, mixed>  $connection
      */
@@ -33,14 +37,5 @@ final class PostgresDumper extends ProcessDumper
             '--no-password',
             ...$this->optionsFor('pgsql'),
         ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $connection
-     * @return array<string, string>
-     */
-    public function env(array $connection): array
-    {
-        return ['PGPASSWORD' => $this->config($connection, 'password')];
     }
 }

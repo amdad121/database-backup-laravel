@@ -37,11 +37,25 @@ class ListBackupsCommand extends Command
             ['File', 'Size', 'Modified'],
             array_map(fn (array $backup): array => [
                 $backup['path'],
-                number_format($backup['size'] / 1024, 1).' KB',
+                $this->humanSize($backup['size']),
                 date('Y-m-d H:i:s', $backup['modified']),
             ], $backups),
         );
 
         return self::SUCCESS;
+    }
+
+    private function humanSize(int $bytes): string
+    {
+        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        $i = 0;
+        $size = (float) $bytes;
+
+        while ($size >= 1024 && $i < count($units) - 1) {
+            $size /= 1024;
+            $i++;
+        }
+
+        return $i === 0 ? "{$bytes} B" : number_format($size, 1).' '.$units[$i];
     }
 }

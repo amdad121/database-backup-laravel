@@ -2,6 +2,34 @@
 
 All notable changes to `database-backup-laravel` will be documented in this file.
 
+## Unreleased
+
+### Fixed
+
+- Pruning, `db:backups` and `db:restore --latest` no longer mix up connections whose names share a prefix (e.g. `pgsql` and `pgsql-replica`), which could delete or restore another connection's backups. Backups are now stored in a per-connection folder (`{path}/{connection}/`); legacy files in `{path}/` are still recognised when the name matches exactly.
+- SQLite backups use `VACUUM INTO`, so committed data still in the WAL file is included and the snapshot is consistent.
+- SQLite restores swap the file in atomically and remove stale `-wal` / `-shm` / `-journal` files that could corrupt the restored database.
+- gzip / gunzip / download now fail on short or failed writes (e.g. a full disk) instead of uploading a truncated backup.
+- Connections configured with `url` / `DB_URL` or read/write hosts are resolved correctly.
+- Local dump files are no longer world-readable (temp dir `0700`, files `0600`).
+- `db:restore` reports every failure (e.g. temp dir errors, disk exceptions) as a clean error; `db:backups` does the same for disk errors.
+- MySQL / MariaDB restores pipe the dump to stdin instead of `SOURCE <path>`, so temp paths with spaces work.
+- Two backups in the same second no longer overwrite each other; "latest" and retention order by the timestamp in the file name.
+- A pruning error no longer marks a successful backup as failed; `BackupPruneFailed` is dispatched instead.
+- `db:restore` refuses a backup whose type does not match the connection's driver.
+
+### Added
+
+- `RestoreCompleted`, `RestoreFailed` and `BackupPruneFailed` events.
+- PostgreSQL `sslmode` / `sslcert` / `sslkey` / `sslrootcert` are passed to `pg_dump` / `psql`.
+- MariaDB connections use `mariadb-dump` / `mariadb` when available (`binaries.mariadb-dump` / `binaries.mariadb`).
+- `db:backups` shows sizes in B / KB / MB / GB.
+- CI now tests Laravel 11.
+
+### Changed
+
+- gzip level lowered from 9 to 6 (much faster, near-identical size).
+
 ## v1.2.0
 
 ### Added

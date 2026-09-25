@@ -33,10 +33,11 @@ abstract class ProcessRestorer implements Restorer
     /**
      * @param  list<string>  $command
      * @param  array<string, string>  $env
+     * @param  resource|null  $input  Stream piped to the process's stdin.
      */
-    protected function run(array $command, array $env): void
+    protected function run(array $command, array $env, $input = null): void
     {
-        $process = new Process($command, null, $env, null, (float) $this->timeout);
+        $process = new Process($command, null, $env, $input, (float) $this->timeout);
         $process->run();
 
         throw_unless(

@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace AmdadulHaq\DatabaseBackup\Dumpers;
 
+use AmdadulHaq\DatabaseBackup\Concerns\MysqlBinary;
+
 /**
  * Dumps MySQL and MariaDB connections with mysqldump.
  */
 final class MysqlDumper extends ProcessDumper
 {
+    use MysqlBinary;
+
     /**
      * @param  array<string, mixed>  $connection
      */
@@ -24,7 +28,7 @@ final class MysqlDumper extends ProcessDumper
     public function command(array $connection, string $target): array
     {
         $command = [
-            $this->binary('mysqldump'),
+            $this->mysqlBinary($this->config($connection, 'driver', 'mysql'), 'mysqldump', 'mariadb-dump'),
             '--host='.$this->config($connection, 'host', '127.0.0.1'),
             '--port='.$this->config($connection, 'port', '3306'),
             '--user='.$this->config($connection, 'username', 'root'),

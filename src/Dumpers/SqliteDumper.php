@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace AmdadulHaq\DatabaseBackup\Dumpers;
 
 use AmdadulHaq\DatabaseBackup\Exceptions\BackupFailedException;
+use PDO;
+use Throwable;
 
 /**
- * Backs up SQLite connections by copying the database file.
+ * Backs up SQLite connections with VACUUM INTO, which produces a consistent
+ * snapshot that includes committed data still in the WAL file.
  */
 final class SqliteDumper extends ProcessDumper
 {
@@ -24,6 +27,12 @@ final class SqliteDumper extends ProcessDumper
         $database = $this->config($connection, 'database');
 
         throw_if($database === '' || ! is_file($database), BackupFailedException::class, "SQLite database file not found: [{$database}].");
-        throw_unless(@copy($database, $target), BackupFailedException::class, "Unable to copy SQLite database [{$database}].");
+
+        try {
+            $pdo = new PDO('sqlite:'.$database, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+            $pdo->prepare('VACUUM INTO ?')->execute([$target]);
+        } catch (Throwable $throwable) {
+            throw new BackupFailedException("Unable to back up SQLite database [{$database}]: {$throwable->getMessage()}", previous: $throwable);
+        }
     }
 }
