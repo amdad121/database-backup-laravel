@@ -2,7 +2,7 @@
 
 All notable changes to `database-backup-laravel` will be documented in this file.
 
-## Unreleased
+## v2.0.1
 
 ### Fixed
 
