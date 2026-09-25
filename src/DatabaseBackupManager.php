@@ -8,6 +8,7 @@ use AmdadulHaq\DatabaseBackup\Dumpers\Dumper;
 use AmdadulHaq\DatabaseBackup\Dumpers\MysqlDumper;
 use AmdadulHaq\DatabaseBackup\Dumpers\PostgresDumper;
 use AmdadulHaq\DatabaseBackup\Dumpers\SqliteDumper;
+use AmdadulHaq\DatabaseBackup\Events\BackupChecksumFailed;
 use AmdadulHaq\DatabaseBackup\Events\BackupCompleted;
 use AmdadulHaq\DatabaseBackup\Events\BackupFailed;
 use AmdadulHaq\DatabaseBackup\Events\BackupPruneFailed;
@@ -49,12 +50,18 @@ class DatabaseBackupManager
         throw_if($connection === '', BackupFailedException::class, 'No database connection configured to back up.');
 
         try {
-            return $this->privately(fn (): string => $this->run($connection));
+            [$remote, $events] = $this->run($connection);
         } catch (Throwable $throwable) {
             $this->events->dispatch(new BackupFailed($connection, $throwable));
 
             throw $throwable instanceof BackupFailedException ? $throwable : new BackupFailedException($throwable->getMessage(), previous: $throwable);
         }
+
+        foreach ($events as $event) {
+            $this->events->dispatch($event);
+        }
+
+        return $remote;
     }
 
     /**
@@ -68,7 +75,7 @@ class DatabaseBackupManager
         throw_if($connection === '', RestoreFailedException::class, 'No database connection configured to restore.');
 
         try {
-            $remote = $this->privately(fn (): string => $this->runRestore($connection, $file, $latest));
+            $remote = $this->runRestore($connection, $file, $latest);
         } catch (Throwable $throwable) {
             $this->events->dispatch(new RestoreFailed($connection, $throwable));
 
@@ -104,7 +111,10 @@ class DatabaseBackupManager
         }
     }
 
-    private function run(string $connection): string
+    /**
+     * @return array{0: string, 1: list<object>} The remote path and the events to dispatch.
+     */
+    private function run(string $connection): array
     {
         $settings = $this->settings();
         $connectionConfig = $this->connectionConfig($connection, BackupFailedException::class);
@@ -114,10 +124,10 @@ class DatabaseBackupManager
         $local = $this->tempDir($settings, BackupFailedException::class).'/db-backup-'.Str::random(16).'.'.$extension;
 
         try {
-            $dumper->dump($connectionConfig, $local);
+            $this->privately(fn () => $dumper->dump($connectionConfig, $local));
 
             if ((bool) ($settings['compress'] ?? true)) {
-                $local = $this->gzip($local);
+                $local = $this->privately(fn (): string => $this->gzip($local));
                 $extension .= '.gz';
             }
 
@@ -126,16 +136,22 @@ class DatabaseBackupManager
 
             $this->upload($disk, $local, $remote);
 
-            $this->events->dispatch(new BackupCompleted($connection, $this->diskName(), $remote, filesize($local) ?: 0));
+            $events = [new BackupCompleted($connection, $this->diskName(), $remote, filesize($local) ?: 0)];
+
+            // The backup itself is safely stored from here on; later errors must not report it as failed.
+            try {
+                $this->writeChecksum($disk, $local, $remote);
+            } catch (Throwable $throwable) {
+                $events[] = new BackupChecksumFailed($connection, $remote, $throwable);
+            }
 
             try {
                 $this->prune($disk, $connection, $connectionConfig, (array) ($settings['retention'] ?? []));
             } catch (Throwable $throwable) {
-                // The backup itself is safely stored; a pruning error must not report it as failed.
-                $this->events->dispatch(new BackupPruneFailed($connection, $throwable));
+                $events[] = new BackupPruneFailed($connection, $throwable);
             }
 
-            return $remote;
+            return [$remote, $events];
         } finally {
             if (is_file($local)) {
                 @unlink($local);
@@ -167,11 +183,11 @@ class DatabaseBackupManager
         $local = $this->tempDir($settings, RestoreFailedException::class).'/db-restore-'.Str::random(16).'-'.$basename;
 
         try {
-            $this->download($disk, $remote, $local);
+            $this->privately(fn () => $this->download($disk, $remote, $local));
             $this->verifyChecksum($disk, $remote, $local);
 
             if (str_ends_with($local, '.gz')) {
-                $local = $this->gunzip($local);
+                $local = $this->privately(fn (): string => $this->gunzip($local));
             }
 
             // Drop this process's open handle so it reconnects to the restored database.
@@ -188,7 +204,9 @@ class DatabaseBackupManager
     }
 
     /**
-     * Run $callback with a restrictive umask so dumps are never readable by other users.
+     * Run $callback with a restrictive umask so the local dump files it creates are
+     * never readable by other users. Keep it scoped to local temp-file work: disk
+     * writes and event listeners must run under the normal umask.
      *
      * @template T
      *
@@ -366,7 +384,14 @@ class DatabaseBackupManager
      */
     private function tempDir(array $settings, string $exception): string
     {
-        $dir = (string) ($settings['temp_directory'] ?? sys_get_temp_dir());
+        // Resolved at runtime (not in the config file) so a cached config built by
+        // one user still gives each user running the command their own folder.
+        $dir = (string) ($settings['temp_directory'] ?? '');
+
+        if ($dir === '') {
+            $user = function_exists('posix_geteuid') ? (string) posix_geteuid() : get_current_user();
+            $dir = sys_get_temp_dir().DIRECTORY_SEPARATOR.'database-backup-'.$user;
+        }
 
         throw_if(
             ! is_dir($dir) && ! @mkdir($dir, 0700, true) && ! is_dir($dir) || ! is_writable($dir),
@@ -420,7 +445,10 @@ class DatabaseBackupManager
             BackupFailedException::class,
             "Uploaded backup [{$remote}] is {$disk->size($remote)} bytes, expected {$size}.",
         );
+    }
 
+    private function writeChecksum(Filesystem $disk, string $local, string $remote): void
+    {
         throw_if(
             $disk->put($remote.'.sha256', (string) hash_file('sha256', $local)) === false,
             BackupFailedException::class,

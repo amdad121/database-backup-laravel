@@ -139,7 +139,7 @@ it('writes a private option file with the escaped password and removes it', func
 
     [$file, $contents, $mode] = $dumper->peek(['password' => 'p\\a"ss']);
 
-    expect($contents)->toBe("[client]\npassword=\"p\\\\a\"ss\"\n")
+    expect($contents)->toBe("[client]\npassword=\"p\\\\a\\\"ss\"\n")
         ->and($mode)->toBe(0600)
         ->and(file_exists($file))->toBeFalse();
 });

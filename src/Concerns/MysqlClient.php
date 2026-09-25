@@ -88,12 +88,14 @@ trait MysqlClient
         $file = sys_get_temp_dir().DIRECTORY_SEPARATOR.'db-backup-my-'.bin2hex(random_bytes(12)).'.cnf';
 
         // "x" refuses to follow a pre-existing file or symlink at that path.
+        $umask = umask(0077);
         $handle = @fopen($file, 'x');
+        umask($umask);
         throw_if($handle === false, $this->failure(), 'Unable to create a MySQL option file.');
 
         try {
             chmod($file, 0600);
-            $password = strtr((string) ($connection['password'] ?? ''), ['\\' => '\\\\', "\n" => '\\n', "\r" => '\\r', "\t" => '\\t']);
+            $password = strtr((string) ($connection['password'] ?? ''), ['\\' => '\\\\', '"' => '\\"', "\n" => '\\n', "\r" => '\\r', "\t" => '\\t']);
             $written = fwrite($handle, "[client]\npassword=\"{$password}\"\n");
             fclose($handle);
             throw_if($written === false, $this->failure(), 'Unable to write the MySQL option file.');

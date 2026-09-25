@@ -81,8 +81,8 @@ return [
     |
     */
     'timeout' => (int) env('DB_BACKUP_TIMEOUT', 900),
-    // Per-user default, so a folder first created by e.g. root's cron does not block other users.
-    'temp_directory' => env('DB_BACKUP_TEMP_DIR', sys_get_temp_dir().DIRECTORY_SEPARATOR.'database-backup-'.(function_exists('posix_geteuid') ? posix_geteuid() : get_current_user())),
+    // null = "{system temp}/database-backup-{uid}", resolved per user at runtime.
+    'temp_directory' => env('DB_BACKUP_TEMP_DIR'),
 
     'binaries' => [
         'mysqldump' => env('DB_BACKUP_BIN_MYSQLDUMP', 'mysqldump'),
